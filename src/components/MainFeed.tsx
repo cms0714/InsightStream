@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useTransition } from 'react';
-import { Post, Category, Reaction, Profile } from '@/lib/types';
+import { Post, Category, Reaction, Profile, SortMode } from '@/lib/types';
 import { CategoryItem } from '@/lib/categories';
 import {
   createPost,
@@ -11,6 +11,7 @@ import {
   toggleBookmark,
   addComment,
   fetchPostDetail,
+  searchPosts,
 } from '@/lib/actions';
 import { useToast } from '@/lib/toast-context';
 import Header from './Header';
@@ -19,6 +20,7 @@ import PostForm from './PostForm';
 import Feed from './Feed';
 import PostDetail from './PostDetail';
 import ProfileSetup from './ProfileSetup';
+import SortToggle from './SortToggle';
 
 interface MainFeedProps {
   initialPosts: Post[];
@@ -35,6 +37,10 @@ export default function MainFeed({
 }: MainFeedProps) {
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [activeTab, setActiveTab] = useState<CategoryItem['key']>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('latest');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Post[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(
     new Set(initialBookmarkIds)
   );
@@ -62,6 +68,24 @@ export default function MainFeed({
     }
     setShowProfileEdit(false);
   }, [showToast]);
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    setSearchLoading(true);
+    try {
+      const results = await searchPosts(query);
+      setSearchResults(results);
+    } catch {
+      showToast('검색에 실패했습니다.', 'error');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery('');
+    setSearchResults(null);
+  };
 
   const handleAddPost = async (data: {
     url: string;
@@ -103,7 +127,6 @@ export default function MainFeed({
   };
 
   const handleEditPost = async (postId: string, data: { content: string; categories: Category[] }) => {
-    // Optimistic update
     const prevPosts = posts;
     const prevDetailData = selectedPostData;
 
@@ -147,7 +170,6 @@ export default function MainFeed({
     const currentReactions = userReactions[postId] || [];
     const alreadyReacted = currentReactions.includes(type);
 
-    // Optimistic update
     setPosts((prev) =>
       prev.map((post) =>
         post.id === postId
@@ -168,7 +190,6 @@ export default function MainFeed({
         : [...currentReactions, type],
     }));
 
-    // Also update detail view if open
     if (selectedPostData?.id === postId) {
       setSelectedPostData((prev) =>
         prev
@@ -185,7 +206,6 @@ export default function MainFeed({
 
     const result = await toggleReaction(postId, type);
     if (result.error) {
-      // Rollback
       setPosts((prev) =>
         prev.map((post) =>
           post.id === postId
@@ -212,7 +232,6 @@ export default function MainFeed({
 
     const wasBookmarked = bookmarkedIds.has(postId);
 
-    // Optimistic update
     setBookmarkedIds((prev) => {
       const next = new Set(prev);
       if (wasBookmarked) next.delete(postId);
@@ -222,7 +241,6 @@ export default function MainFeed({
 
     const result = await toggleBookmark(postId);
     if (result.error) {
-      // Rollback
       setBookmarkedIds((prev) => {
         const next = new Set(prev);
         if (wasBookmarked) next.add(postId);
@@ -241,7 +259,8 @@ export default function MainFeed({
     if (result) {
       setSelectedPostData(result.post);
     } else {
-      const fallback = posts.find((p) => p.id === postId);
+      const allPosts = searchResults ?? posts;
+      const fallback = allPosts.find((p) => p.id === postId);
       if (fallback) setSelectedPostData(fallback);
     }
     setDetailLoading(false);
@@ -277,11 +296,29 @@ export default function MainFeed({
     setSelectedPostData(null);
   };
 
-  const filteredPosts = (() => {
-    if (activeTab === 'all') return posts;
-    if (activeTab === 'saved') return posts.filter((p) => bookmarkedIds.has(p.id));
-    return posts.filter((p) => p.categories.includes(activeTab as Category));
+  // Determine which posts to display
+  const displayPosts = (() => {
+    if (searchResults !== null) return searchResults;
+
+    let filtered = posts;
+    if (activeTab === 'saved') {
+      filtered = posts.filter((p) => bookmarkedIds.has(p.id));
+    } else if (activeTab !== 'all') {
+      filtered = posts.filter((p) => p.categories.includes(activeTab as Category));
+    }
+
+    if (sortMode === 'popular') {
+      return [...filtered].sort((a, b) => {
+        const scoreA = a.reactions.oh + a.reactions.amazing + a.reactions.useful;
+        const scoreB = b.reactions.oh + b.reactions.amazing + b.reactions.useful;
+        return scoreB - scoreA;
+      });
+    }
+
+    return filtered;
   })();
+
+  const isSearching = searchResults !== null;
 
   return (
     <>
@@ -293,17 +330,36 @@ export default function MainFeed({
           onClose={() => setShowProfileEdit(false)}
         />
       )}
-      <Header profile={profile} onProfileEdit={() => setShowProfileEdit(true)} />
-      <FilterTabs
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        showSaved={bookmarkedIds.size > 0}
+      <Header
+        profile={profile}
+        onProfileEdit={() => setShowProfileEdit(true)}
+        onSearch={handleSearch}
+        onSearchClear={handleSearchClear}
+        onPostClick={handlePostClick}
       />
-      {profile && <PostForm onSubmit={handleAddPost} />}
+      {!isSearching && (
+        <FilterTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          showSaved={bookmarkedIds.size > 0}
+        />
+      )}
+      {isSearching ? (
+        <div className="px-4 pt-3 flex items-center justify-between">
+          <p className="text-sm text-text-muted">
+            {searchLoading ? '검색 중...' : `"${searchQuery}" 검색 결과 ${searchResults.length}건`}
+          </p>
+        </div>
+      ) : (
+        <div className="px-4 pt-3 flex items-center justify-between">
+          <SortToggle sort={sortMode} onSortChange={setSortMode} />
+        </div>
+      )}
+      {!isSearching && profile && <PostForm onSubmit={handleAddPost} />}
       <Feed
-        posts={filteredPosts}
+        posts={displayPosts}
         bookmarkedIds={bookmarkedIds}
-        activeTab={activeTab}
+        activeTab={isSearching ? 'all' : activeTab}
         onReact={handleReact}
         onBookmarkToggle={handleBookmarkToggle}
         onPostClick={handlePostClick}

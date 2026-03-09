@@ -3,7 +3,7 @@
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { supabase } from './supabase';
-import type { Profile, Post, Comment, Category } from './types';
+import type { Profile, Post, Comment, Category, SortMode, Notification } from './types';
 
 const COOKIE_NAME = 'insightstream-profile-id';
 
@@ -63,20 +63,8 @@ export async function updateProfile(
   return { success: true, profile: data };
 }
 
-export async function fetchPosts(category?: string): Promise<Post[]> {
-  let query = supabase
-    .from('posts_feed')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (category && category !== 'all') {
-    query = query.contains('categories', [category]);
-  }
-
-  const { data, error } = await query;
-  if (error) throw new Error('피드를 불러오는 데 실패했습니다.');
-
-  return (data ?? []).map((row: Record<string, unknown>) => ({
+function mapRowToPost(row: Record<string, unknown>): Post {
+  return {
     id: row.id as string,
     url: row.url as string,
     title: row.title as string,
@@ -94,7 +82,43 @@ export async function fetchPosts(category?: string): Promise<Post[]> {
     },
     comments: [],
     commentCount: Number(row.comment_count) || 0,
-  }));
+  };
+}
+
+export async function fetchPosts(category?: string, sort: SortMode = 'latest'): Promise<Post[]> {
+  let query = supabase.from('posts_feed').select('*');
+
+  if (category && category !== 'all') {
+    query = query.contains('categories', [category]);
+  }
+
+  if (sort === 'popular') {
+    query = query.order('oh_count', { ascending: false })
+      .order('amazing_count', { ascending: false })
+      .order('useful_count', { ascending: false });
+  } else {
+    query = query.order('created_at', { ascending: false });
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error('피드를 불러오는 데 실패했습니다.');
+
+  return (data ?? []).map(mapRowToPost);
+}
+
+export async function searchPosts(query: string): Promise<Post[]> {
+  const searchTerm = `%${query.trim()}%`;
+
+  const { data, error } = await supabase
+    .from('posts_feed')
+    .select('*')
+    .or(`title.ilike.${searchTerm},content.ilike.${searchTerm},author_name.ilike.${searchTerm}`)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) throw new Error('검색에 실패했습니다.');
+
+  return (data ?? []).map(mapRowToPost);
 }
 
 export async function fetchPostDetail(postId: string): Promise<{ post: Post; comments: Comment[] } | null> {
@@ -287,6 +311,22 @@ export async function toggleReaction(
       profile_id: profileId,
       reaction_type: type,
     });
+
+    // 알림 생성 (본인 글이 아닌 경우만)
+    const { data: post } = await supabase
+      .from('posts')
+      .select('author_id')
+      .eq('id', postId)
+      .single();
+    if (post && post.author_id !== profileId) {
+      await supabase.from('notifications').insert({
+        recipient_id: post.author_id,
+        actor_id: profileId,
+        post_id: postId,
+        type: 'reaction',
+      });
+    }
+
     return { toggled: true };
   }
 }
@@ -312,6 +352,21 @@ export async function addComment(
     .single();
 
   if (error || !data) return { success: false, error: '댓글 작성에 실패했습니다.' };
+
+  // 알림 생성 (본인 글이 아닌 경우만)
+  const { data: post } = await supabase
+    .from('posts')
+    .select('author_id')
+    .eq('id', postId)
+    .single();
+  if (post && post.author_id !== profileId) {
+    await supabase.from('notifications').insert({
+      recipient_id: post.author_id,
+      actor_id: profileId,
+      post_id: postId,
+      type: 'comment',
+    });
+  }
 
   return {
     success: true,
@@ -349,4 +404,45 @@ export async function toggleBookmark(
     });
     return { bookmarked: true };
   }
+}
+
+export async function fetchNotifications(): Promise<Notification[]> {
+  const cookieStore = await cookies();
+  const profileId = cookieStore.get(COOKIE_NAME)?.value;
+  if (!profileId) return [];
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, type, read, created_at, post_id, posts(title), profiles!notifications_actor_id_fkey(nickname)')
+    .eq('recipient_id', profileId)
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  if (error || !data) return [];
+
+  return data.map((row: Record<string, unknown>) => {
+    const actor = row.profiles as { nickname: string } | null;
+    const post = row.posts as { title: string } | null;
+    return {
+      id: row.id as string,
+      type: row.type as 'reaction' | 'comment',
+      actorName: actor?.nickname ?? '알 수 없음',
+      postId: row.post_id as string,
+      postTitle: post?.title ?? '',
+      read: row.read as boolean,
+      createdAt: row.created_at as string,
+    };
+  });
+}
+
+export async function markNotificationsRead(): Promise<void> {
+  const cookieStore = await cookies();
+  const profileId = cookieStore.get(COOKIE_NAME)?.value;
+  if (!profileId) return;
+
+  await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('recipient_id', profileId)
+    .eq('read', false);
 }

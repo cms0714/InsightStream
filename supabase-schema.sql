@@ -67,8 +67,22 @@ LEFT JOIN reactions r ON r.post_id = p.id
 LEFT JOIN comments c ON c.post_id = p.id
 GROUP BY p.id, pr.nickname, pr.major;
 
+-- 알림
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  actor_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('reaction', 'comment')),
+  read BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- 인덱스
 CREATE INDEX idx_posts_categories ON posts USING GIN(categories);
+CREATE INDEX idx_posts_title_trgm ON posts USING GIN(title gin_trgm_ops);
+CREATE INDEX idx_posts_content_trgm ON posts USING GIN(content gin_trgm_ops);
+CREATE INDEX idx_notifications_recipient ON notifications(recipient_id, read, created_at DESC);
 CREATE INDEX idx_posts_created ON posts(created_at DESC);
 CREATE INDEX idx_comments_post ON comments(post_id);
 CREATE INDEX idx_reactions_post ON reactions(post_id);

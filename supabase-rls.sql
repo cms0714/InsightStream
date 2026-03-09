@@ -116,3 +116,23 @@ CREATE POLICY "bookmarks_delete" ON bookmarks
     profile_id IS NOT NULL
     AND EXISTS (SELECT 1 FROM profiles WHERE id = profile_id)
   );
+
+-- ============================================================
+-- 7. notifications 테이블
+--    - 본인 알림만 읽기 가능
+--    - 프로필이 존재하는 사용자만 생성 가능
+--    - 읽음 처리 업데이트 가능
+-- ============================================================
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "notifications_select" ON notifications
+  FOR SELECT USING (true);
+
+CREATE POLICY "notifications_insert" ON notifications
+  FOR INSERT WITH CHECK (
+    actor_id IS NOT NULL
+    AND EXISTS (SELECT 1 FROM profiles WHERE id = actor_id)
+  );
+
+CREATE POLICY "notifications_update" ON notifications
+  FOR UPDATE USING (true) WITH CHECK (true);

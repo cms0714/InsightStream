@@ -35,3 +35,15 @@ export interface Post {
   comments: Comment[];
   commentCount: number;
 }
+
+export type SortMode = 'latest' | 'popular';
+
+export interface Notification {
+  id: string;
+  type: 'reaction' | 'comment';
+  actorName: string;
+  postId: string;
+  postTitle: string;
+  read: boolean;
+  createdAt: string;
+}
