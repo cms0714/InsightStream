@@ -1,59 +1,103 @@
 'use server';
 
-import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
-import { supabase } from './supabase';
+import { createSupabaseServer } from './supabase';
 import type { Profile, Post, Comment, Category, SortMode, Notification } from './types';
 
-const COOKIE_NAME = 'insightstream-profile-id';
-
-export async function getProfile(): Promise<Profile | null> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return null;
+async function getAuthProfile(supabase: Awaited<ReturnType<typeof createSupabaseServer>>): Promise<Profile | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
 
   const { data } = await supabase
     .from('profiles')
     .select('id, nickname, major')
-    .eq('id', profileId)
+    .eq('auth_id', user.id)
     .single();
 
   return data ?? null;
 }
 
-export async function createProfile(nickname: string, major: string): Promise<Profile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .insert({ nickname, major })
-    .select('id, nickname, major')
-    .single();
+export async function getProfile(): Promise<Profile | null> {
+  const supabase = await createSupabaseServer();
+  return getAuthProfile(supabase);
+}
 
-  if (error || !data) throw new Error('프로필 생성에 실패했습니다.');
+export async function signUp(
+  email: string,
+  password: string,
+  nickname: string,
+  major: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createSupabaseServer();
 
-  const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, data.id, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 365,
-    path: '/',
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
   });
 
-  return data;
+  if (authError || !authData.user) {
+    if (authError?.message?.includes('already registered')) {
+      return { success: false, error: '이미 가입된 이메일입니다.' };
+    }
+    return { success: false, error: authError?.message || '회원가입에 실패했습니다.' };
+  }
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({
+      nickname,
+      major,
+      auth_id: authData.user.id,
+    });
+
+  if (profileError) {
+    return { success: false, error: '프로필 생성에 실패했습니다.' };
+  }
+
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function signIn(
+  email: string,
+  password: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createSupabaseServer();
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    if (error.message?.includes('Invalid login')) {
+      return { success: false, error: '이메일 또는 비밀번호가 올바르지 않습니다.' };
+    }
+    return { success: false, error: error.message || '로그인에 실패했습니다.' };
+  }
+
+  revalidatePath('/');
+  return { success: true };
+}
+
+export async function signOut(): Promise<void> {
+  const supabase = await createSupabaseServer();
+  await supabase.auth.signOut();
+  revalidatePath('/');
 }
 
 export async function updateProfile(
   nickname: string,
   major: string
 ): Promise<{ success: boolean; profile?: Profile; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { success: false, error: '프로필을 찾을 수 없습니다.' };
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { success: false, error: '로그인이 필요합니다.' };
 
   const { data, error } = await supabase
     .from('profiles')
     .update({ nickname, major })
-    .eq('id', profileId)
+    .eq('id', profile.id)
     .select('id, nickname, major')
     .single();
 
@@ -86,6 +130,7 @@ function mapRowToPost(row: Record<string, unknown>): Post {
 }
 
 export async function fetchPosts(category?: string, sort: SortMode = 'latest'): Promise<Post[]> {
+  const supabase = await createSupabaseServer();
   let query = supabase.from('posts_feed').select('*');
 
   if (category && category !== 'all') {
@@ -107,6 +152,7 @@ export async function fetchPosts(category?: string, sort: SortMode = 'latest'): 
 }
 
 export async function searchPosts(query: string): Promise<Post[]> {
+  const supabase = await createSupabaseServer();
   const searchTerm = `%${query.trim()}%`;
 
   const { data, error } = await supabase
@@ -122,6 +168,8 @@ export async function searchPosts(query: string): Promise<Post[]> {
 }
 
 export async function fetchPostDetail(postId: string): Promise<{ post: Post; comments: Comment[] } | null> {
+  const supabase = await createSupabaseServer();
+
   const { data: row } = await supabase
     .from('posts_feed')
     .select('*')
@@ -148,21 +196,7 @@ export async function fetchPostDetail(postId: string): Promise<{ post: Post; com
   });
 
   const post: Post = {
-    id: row.id,
-    url: row.url,
-    title: row.title,
-    thumbnail: row.thumbnail,
-    content: row.content,
-    categories: (row.categories as string[]).map((c: string) => c as Category),
-    author: row.author_name,
-    major: row.author_major,
-    authorId: row.author_id,
-    createdAt: row.created_at,
-    reactions: {
-      oh: Number(row.oh_count) || 0,
-      amazing: Number(row.amazing_count) || 0,
-      useful: Number(row.useful_count) || 0,
-    },
+    ...mapRowToPost(row),
     comments,
     commentCount: comments.length,
   };
@@ -171,14 +205,14 @@ export async function fetchPostDetail(postId: string): Promise<{ post: Post; com
 }
 
 export async function fetchUserReactions(postIds: string[]): Promise<Record<string, string[]>> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId || postIds.length === 0) return {};
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile || postIds.length === 0) return {};
 
   const { data } = await supabase
     .from('reactions')
     .select('post_id, reaction_type')
-    .eq('profile_id', profileId)
+    .eq('profile_id', profile.id)
     .in('post_id', postIds);
 
   const result: Record<string, string[]> = {};
@@ -190,14 +224,14 @@ export async function fetchUserReactions(postIds: string[]): Promise<Record<stri
 }
 
 export async function fetchBookmarkIds(): Promise<string[]> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return [];
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return [];
 
   const { data } = await supabase
     .from('bookmarks')
     .select('post_id')
-    .eq('profile_id', profileId);
+    .eq('profile_id', profile.id);
 
   return (data ?? []).map((row: { post_id: string }) => row.post_id);
 }
@@ -209,9 +243,9 @@ export async function createPost(formData: {
   content: string;
   categories: Category[];
 }): Promise<{ success: boolean; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { success: false, error: '프로필을 먼저 설정해주세요.' };
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { success: false, error: '로그인이 필요합니다.' };
 
   const { error } = await supabase.from('posts').insert({
     url: formData.url,
@@ -219,7 +253,7 @@ export async function createPost(formData: {
     thumbnail: formData.thumbnail,
     content: formData.content,
     categories: formData.categories,
-    author_id: profileId,
+    author_id: profile.id,
   });
 
   if (error) return { success: false, error: '글 작성에 실패했습니다.' };
@@ -232,18 +266,17 @@ export async function updatePost(
   postId: string,
   data: { content: string; categories: Category[] }
 ): Promise<{ success: boolean; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { success: false, error: '프로필을 먼저 설정해주세요.' };
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { success: false, error: '로그인이 필요합니다.' };
 
-  // 본인 글인지 확인
   const { data: post } = await supabase
     .from('posts')
     .select('author_id')
     .eq('id', postId)
     .single();
 
-  if (!post || post.author_id !== profileId) {
+  if (!post || post.author_id !== profile.id) {
     return { success: false, error: '본인의 글만 수정할 수 있습니다.' };
   }
 
@@ -261,9 +294,9 @@ export async function updatePost(
 export async function deletePost(
   postId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { success: false, error: '프로필을 먼저 설정해주세요.' };
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { success: false, error: '로그인이 필요합니다.' };
 
   const { data: post } = await supabase
     .from('posts')
@@ -271,7 +304,7 @@ export async function deletePost(
     .eq('id', postId)
     .single();
 
-  if (!post || post.author_id !== profileId) {
+  if (!post || post.author_id !== profile.id) {
     return { success: false, error: '본인의 글만 삭제할 수 있습니다.' };
   }
 
@@ -290,15 +323,15 @@ export async function toggleReaction(
   postId: string,
   type: 'oh' | 'amazing' | 'useful'
 ): Promise<{ toggled: boolean; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { toggled: false, error: '프로필을 먼저 설정해주세요.' };
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { toggled: false, error: '로그인이 필요합니다.' };
 
   const { data: existing } = await supabase
     .from('reactions')
     .select('id')
     .eq('post_id', postId)
-    .eq('profile_id', profileId)
+    .eq('profile_id', profile.id)
     .eq('reaction_type', type)
     .single();
 
@@ -308,20 +341,19 @@ export async function toggleReaction(
   } else {
     await supabase.from('reactions').insert({
       post_id: postId,
-      profile_id: profileId,
+      profile_id: profile.id,
       reaction_type: type,
     });
 
-    // 알림 생성 (본인 글이 아닌 경우만)
     const { data: post } = await supabase
       .from('posts')
       .select('author_id')
       .eq('id', postId)
       .single();
-    if (post && post.author_id !== profileId) {
+    if (post && post.author_id !== profile.id) {
       await supabase.from('notifications').insert({
         recipient_id: post.author_id,
-        actor_id: profileId,
+        actor_id: profile.id,
         post_id: postId,
         type: 'reaction',
       });
@@ -335,34 +367,27 @@ export async function addComment(
   postId: string,
   text: string
 ): Promise<{ success: boolean; comment?: Comment; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { success: false, error: '프로필을 먼저 설정해주세요.' };
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('nickname, major')
-    .eq('id', profileId)
-    .single();
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { success: false, error: '로그인이 필요합니다.' };
 
   const { data, error } = await supabase
     .from('comments')
-    .insert({ post_id: postId, author_id: profileId, text })
+    .insert({ post_id: postId, author_id: profile.id, text })
     .select('id, created_at')
     .single();
 
   if (error || !data) return { success: false, error: '댓글 작성에 실패했습니다.' };
 
-  // 알림 생성 (본인 글이 아닌 경우만)
   const { data: post } = await supabase
     .from('posts')
     .select('author_id')
     .eq('id', postId)
     .single();
-  if (post && post.author_id !== profileId) {
+  if (post && post.author_id !== profile.id) {
     await supabase.from('notifications').insert({
       recipient_id: post.author_id,
-      actor_id: profileId,
+      actor_id: profile.id,
       post_id: postId,
       type: 'comment',
     });
@@ -372,8 +397,8 @@ export async function addComment(
     success: true,
     comment: {
       id: data.id,
-      author: profile?.nickname ?? '',
-      major: profile?.major ?? '',
+      author: profile.nickname,
+      major: profile.major,
       text,
       createdAt: data.created_at,
     },
@@ -383,15 +408,15 @@ export async function addComment(
 export async function toggleBookmark(
   postId: string
 ): Promise<{ bookmarked: boolean; error?: string }> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return { bookmarked: false, error: '프로필을 먼저 설정해주세요.' };
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return { bookmarked: false, error: '로그인이 필요합니다.' };
 
   const { data: existing } = await supabase
     .from('bookmarks')
     .select('id')
     .eq('post_id', postId)
-    .eq('profile_id', profileId)
+    .eq('profile_id', profile.id)
     .single();
 
   if (existing) {
@@ -400,21 +425,21 @@ export async function toggleBookmark(
   } else {
     await supabase.from('bookmarks').insert({
       post_id: postId,
-      profile_id: profileId,
+      profile_id: profile.id,
     });
     return { bookmarked: true };
   }
 }
 
 export async function fetchNotifications(): Promise<Notification[]> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return [];
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return [];
 
   const { data, error } = await supabase
     .from('notifications')
     .select('id, type, read, created_at, post_id, posts(title), profiles!notifications_actor_id_fkey(nickname)')
-    .eq('recipient_id', profileId)
+    .eq('recipient_id', profile.id)
     .order('created_at', { ascending: false })
     .limit(30);
 
@@ -422,13 +447,13 @@ export async function fetchNotifications(): Promise<Notification[]> {
 
   return data.map((row: Record<string, unknown>) => {
     const actor = row.profiles as { nickname: string } | null;
-    const post = row.posts as { title: string } | null;
+    const postData = row.posts as { title: string } | null;
     return {
       id: row.id as string,
       type: row.type as 'reaction' | 'comment',
       actorName: actor?.nickname ?? '알 수 없음',
       postId: row.post_id as string,
-      postTitle: post?.title ?? '',
+      postTitle: postData?.title ?? '',
       read: row.read as boolean,
       createdAt: row.created_at as string,
     };
@@ -436,13 +461,13 @@ export async function fetchNotifications(): Promise<Notification[]> {
 }
 
 export async function markNotificationsRead(): Promise<void> {
-  const cookieStore = await cookies();
-  const profileId = cookieStore.get(COOKIE_NAME)?.value;
-  if (!profileId) return;
+  const supabase = await createSupabaseServer();
+  const profile = await getAuthProfile(supabase);
+  if (!profile) return;
 
   await supabase
     .from('notifications')
     .update({ read: true })
-    .eq('recipient_id', profileId)
+    .eq('recipient_id', profile.id)
     .eq('read', false);
 }

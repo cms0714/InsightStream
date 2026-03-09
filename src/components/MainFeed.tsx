@@ -19,6 +19,7 @@ import FilterTabs from './FilterTabs';
 import PostForm from './PostForm';
 import Feed from './Feed';
 import PostDetail from './PostDetail';
+import AuthForm from './AuthForm';
 import ProfileSetup from './ProfileSetup';
 import SortToggle from './SortToggle';
 
@@ -51,13 +52,13 @@ export default function MainFeed({
   const [selectedPostData, setSelectedPostData] = useState<Post | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
-  const [showProfileSetup, setShowProfileSetup] = useState(!initialProfile);
+  const [showAuth, setShowAuth] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [, startTransition] = useTransition();
   const { showToast } = useToast();
 
-  const handleProfileComplete = useCallback(() => {
-    setShowProfileSetup(false);
+  const handleAuthComplete = useCallback(() => {
+    setShowAuth(false);
     window.location.reload();
   }, []);
 
@@ -94,7 +95,10 @@ export default function MainFeed({
     content: string;
     categories: Category[];
   }) => {
-    if (!profile) return;
+    if (!profile) {
+      setShowAuth(true);
+      return;
+    }
 
     const optimisticPost: Post = {
       id: 'temp-' + Date.now(),
@@ -165,7 +169,10 @@ export default function MainFeed({
   };
 
   const handleReact = async (postId: string, type: keyof Reaction) => {
-    if (!profile) return;
+    if (!profile) {
+      setShowAuth(true);
+      return;
+    }
 
     const currentReactions = userReactions[postId] || [];
     const alreadyReacted = currentReactions.includes(type);
@@ -228,7 +235,10 @@ export default function MainFeed({
   };
 
   const handleBookmarkToggle = async (postId: string) => {
-    if (!profile) return;
+    if (!profile) {
+      setShowAuth(true);
+      return;
+    }
 
     const wasBookmarked = bookmarkedIds.has(postId);
 
@@ -267,7 +277,10 @@ export default function MainFeed({
   };
 
   const handleAddComment = async (postId: string, text: string) => {
-    if (!profile) return;
+    if (!profile) {
+      setShowAuth(true);
+      return;
+    }
 
     const result = await addComment(postId, text);
     if (result.success && result.comment) {
@@ -296,7 +309,6 @@ export default function MainFeed({
     setSelectedPostData(null);
   };
 
-  // Determine which posts to display
   const displayPosts = (() => {
     if (searchResults !== null) return searchResults;
 
@@ -322,7 +334,7 @@ export default function MainFeed({
 
   return (
     <>
-      {showProfileSetup && <ProfileSetup onComplete={handleProfileComplete} />}
+      {showAuth && <AuthForm onComplete={handleAuthComplete} />}
       {showProfileEdit && profile && (
         <ProfileSetup
           profile={profile}
@@ -353,9 +365,17 @@ export default function MainFeed({
       ) : (
         <div className="px-4 pt-3 flex items-center justify-between">
           <SortToggle sort={sortMode} onSortChange={setSortMode} />
+          {!profile && (
+            <button
+              onClick={() => setShowAuth(true)}
+              className="px-4 py-1.5 rounded-lg bg-accent-green text-black text-xs font-semibold hover:bg-accent-green/80 transition-colors"
+            >
+              로그인
+            </button>
+          )}
         </div>
       )}
-      {!isSearching && profile && <PostForm onSubmit={handleAddPost} />}
+      {profile && !isSearching && <PostForm onSubmit={handleAddPost} />}
       <Feed
         posts={displayPosts}
         bookmarkedIds={bookmarkedIds}

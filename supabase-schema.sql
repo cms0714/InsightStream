@@ -1,9 +1,10 @@
 -- InsightStream_ Supabase Schema
 -- Supabase SQL Editor에서 이 파일을 먼저 실행한 후, supabase-rls.sql을 실행하세요.
 
--- 프로필 (닉네임+전공, UUID 쿠키로 식별)
+-- 프로필 (Supabase Auth 연동)
 CREATE TABLE profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_id UUID UNIQUE,
   nickname TEXT NOT NULL,
   major TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
