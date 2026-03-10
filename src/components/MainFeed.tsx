@@ -307,22 +307,27 @@ export default function MainFeed({
     }
   };
 
-  const handleCloseDetail = useCallback(() => {
+  const handleCloseDetail = useCallback((fromPopState = false) => {
+    if (!fromPopState && selectedPostId) {
+      // X 버튼이나 ESC로 닫을 때 pushState로 추가한 항목 제거
+      window.history.back();
+      return;
+    }
     setSelectedPostId(null);
     setSelectedPostData(null);
-  }, []);
+  }, [selectedPostId]);
 
   // 뒤로가기 버튼으로 PostDetail 닫기
   useEffect(() => {
-    const onPopState = (e: PopStateEvent) => {
+    const onPopState = () => {
       if (selectedPostId) {
-        e.preventDefault();
-        handleCloseDetail();
+        setSelectedPostId(null);
+        setSelectedPostData(null);
       }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [selectedPostId, handleCloseDetail]);
+  }, [selectedPostId]);
 
   const displayPosts = (() => {
     if (searchResults !== null) return searchResults;
@@ -417,7 +422,7 @@ export default function MainFeed({
         <PostDetail
           post={selectedPostData}
           loading={detailLoading}
-          onClose={handleCloseDetail}
+          onClose={() => handleCloseDetail()}
           onReact={handleReact}
           onAddComment={handleAddComment}
           userReactions={userReactions[selectedPostId] || []}
