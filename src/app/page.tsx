@@ -1,7 +1,7 @@
 import MainFeed from '@/components/MainFeed';
 import { getProfile, fetchPosts, fetchBookmarkIds, fetchUserReactions } from '@/lib/actions';
 
-export const revalidate = 30; // 30초 캐싱
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const [profile, posts] = await Promise.all([getProfile(), fetchPosts()]);
