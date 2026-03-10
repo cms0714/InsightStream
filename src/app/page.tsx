@@ -1,13 +1,13 @@
 import MainFeed from '@/components/MainFeed';
 import { getProfile, fetchPosts, fetchBookmarkIds, fetchUserReactions } from '@/lib/actions';
 
+export const revalidate = 30; // 30초 캐싱
+
 export default async function Home() {
-  const profile = await getProfile();
-  const posts = await fetchPosts();
-  const bookmarkIds = profile ? await fetchBookmarkIds() : [];
-  const userReactions = profile
-    ? await fetchUserReactions(posts.map((p) => p.id))
-    : {};
+  const [profile, posts] = await Promise.all([getProfile(), fetchPosts()]);
+  const [bookmarkIds, userReactions] = profile
+    ? await Promise.all([fetchBookmarkIds(), fetchUserReactions(posts.map((p) => p.id))])
+    : [[], {}];
 
   return (
     <div className="min-h-screen bg-bg-primary">
