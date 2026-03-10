@@ -27,6 +27,25 @@ export default function FeedCard({ post, isBookmarked, onReact, onBookmarkToggle
           className="w-full h-40 object-cover"
         />
       )}
+      {post.images && post.images.length > 0 && !post.thumbnail && (
+        <img
+          src={post.images[0]}
+          alt=""
+          className="w-full h-40 object-cover"
+        />
+      )}
+      {post.images && post.images.length > 1 && (
+        <div className="flex gap-1 px-4 pt-2">
+          {post.images.slice(post.thumbnail ? 0 : 1, 4).map((img, i) => (
+            <img key={i} src={img} alt="" className="w-16 h-16 object-cover rounded-lg border border-border" />
+          ))}
+          {post.images.length > 4 && (
+            <span className="w-16 h-16 rounded-lg border border-border bg-bg-primary flex items-center justify-center text-xs text-text-muted">
+              +{post.images.length - 4}
+            </span>
+          )}
+        </div>
+      )}
       <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-2">
           <h3 className="text-sm font-semibold text-text-primary line-clamp-2 flex-1">

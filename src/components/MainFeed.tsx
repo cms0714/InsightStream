@@ -94,6 +94,7 @@ export default function MainFeed({
     thumbnail: string;
     content: string;
     categories: Category[];
+    images?: string[];
   }) => {
     if (!profile) {
       setShowAuth(true);
@@ -114,6 +115,7 @@ export default function MainFeed({
       reactions: { oh: 0, amazing: 0, useful: 0 },
       comments: [],
       commentCount: 0,
+      images: data.images ?? [],
     };
     setPosts((prev) => [optimisticPost, ...prev]);
 

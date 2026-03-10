@@ -34,6 +34,7 @@ export interface Post {
   reactions: Reaction;
   comments: Comment[];
   commentCount: number;
+  images?: string[];
 }
 
 export type SortMode = 'latest' | 'popular';

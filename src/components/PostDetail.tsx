@@ -250,8 +250,25 @@ export default function PostDetail({ post, loading, onClose, onReact, onAddComme
               )}
             </div>
 
+            {/* Images */}
+            {post.images && post.images.length > 0 && (
+              <div className="px-4 pb-3">
+                <div className={`grid gap-2 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {post.images.map((img, i) => (
+                    <a key={i} href={img} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={img}
+                        alt=""
+                        className="w-full rounded-lg border border-border object-cover max-h-72 hover:opacity-80 transition-opacity"
+                      />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Media embed */}
-            <div className="px-4 pb-3">
+            {post.url && <div className="px-4 pb-3">
               {youtubeId ? (
                 <div className="relative w-full rounded-lg overflow-hidden" style={{ paddingBottom: '56.25%' }}>
                   <iframe
@@ -278,7 +295,7 @@ export default function PostDetail({ post, loading, onClose, onReact, onAddComme
                   </div>
                 </a>
               )}
-            </div>
+            </div>}
 
             {/* Reactions */}
             <div className="px-4 pb-3">

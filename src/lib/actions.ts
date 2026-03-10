@@ -126,6 +126,7 @@ function mapRowToPost(row: Record<string, unknown>): Post {
     },
     comments: [],
     commentCount: Number(row.comment_count) || 0,
+    images: (row.images as string[] | null) ?? [],
   };
 }
 
@@ -242,6 +243,7 @@ export async function createPost(formData: {
   thumbnail: string;
   content: string;
   categories: Category[];
+  images?: string[];
 }): Promise<{ success: boolean; error?: string }> {
   const supabase = await createSupabaseServer();
   const profile = await getAuthProfile(supabase);
@@ -253,6 +255,7 @@ export async function createPost(formData: {
     thumbnail: formData.thumbnail,
     content: formData.content,
     categories: formData.categories,
+    images: formData.images ?? [],
     author_id: profile.id,
   });
 
