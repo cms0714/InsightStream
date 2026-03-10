@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useTransition } from 'react';
+import { useState, useCallback, useTransition, useEffect } from 'react';
 import { Post, Category, Reaction, Profile, SortMode } from '@/lib/types';
 import { CategoryItem } from '@/lib/categories';
 import {
@@ -264,6 +264,7 @@ export default function MainFeed({
   };
 
   const handlePostClick = async (postId: string) => {
+    window.history.pushState({ postDetail: true }, '');
     setSelectedPostId(postId);
     setDetailLoading(true);
 
@@ -306,10 +307,22 @@ export default function MainFeed({
     }
   };
 
-  const handleCloseDetail = () => {
+  const handleCloseDetail = useCallback(() => {
     setSelectedPostId(null);
     setSelectedPostData(null);
-  };
+  }, []);
+
+  // 뒤로가기 버튼으로 PostDetail 닫기
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      if (selectedPostId) {
+        e.preventDefault();
+        handleCloseDetail();
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [selectedPostId, handleCloseDetail]);
 
   const displayPosts = (() => {
     if (searchResults !== null) return searchResults;
