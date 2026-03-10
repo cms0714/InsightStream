@@ -1,13 +1,10 @@
 import MainFeed from '@/components/MainFeed';
-import { getProfile, fetchPosts, fetchBookmarkIds, fetchUserReactions } from '@/lib/actions';
+import { fetchInitialData } from '@/lib/actions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const [profile, posts] = await Promise.all([getProfile(), fetchPosts()]);
-  const [bookmarkIds, userReactions] = profile
-    ? await Promise.all([fetchBookmarkIds(), fetchUserReactions(posts.map((p) => p.id))])
-    : [[], {}];
+  const { profile, posts, bookmarkIds, userReactions } = await fetchInitialData();
 
   return (
     <div className="min-h-screen bg-bg-primary">

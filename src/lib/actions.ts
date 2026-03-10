@@ -22,6 +22,54 @@ export async function getProfile(): Promise<Profile | null> {
   return getAuthProfile(supabase);
 }
 
+// 초기 페이지 로드용 통합 함수 — Supabase 클라이언트 1개, auth.getUser() 1번만 호출
+export async function fetchInitialData(): Promise<{
+  profile: Profile | null;
+  posts: Post[];
+  bookmarkIds: string[];
+  userReactions: Record<string, string[]>;
+}> {
+  const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let profile: Profile | null = null;
+  if (user) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, nickname, major')
+      .eq('auth_id', user.id)
+      .single();
+    profile = data ?? null;
+  }
+
+  const { data: postsData } = await supabase
+    .from('posts_feed')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  const posts = (postsData ?? []).map(mapRowToPost);
+
+  if (!profile || posts.length === 0) {
+    return { profile, posts, bookmarkIds: [], userReactions: {} };
+  }
+
+  const postIds = posts.map((p) => p.id);
+  const [bookmarksResult, reactionsResult] = await Promise.all([
+    supabase.from('bookmarks').select('post_id').eq('profile_id', profile.id),
+    supabase.from('reactions').select('post_id, reaction_type').eq('profile_id', profile.id).in('post_id', postIds),
+  ]);
+
+  const bookmarkIds = (bookmarksResult.data ?? []).map((r: { post_id: string }) => r.post_id);
+  const userReactions: Record<string, string[]> = {};
+  for (const row of reactionsResult.data ?? []) {
+    if (!userReactions[row.post_id]) userReactions[row.post_id] = [];
+    userReactions[row.post_id].push(row.reaction_type);
+  }
+
+  return { profile, posts, bookmarkIds, userReactions };
+}
+
 export async function signUp(
   email: string,
   password: string,
@@ -146,7 +194,7 @@ export async function fetchPosts(category?: string, sort: SortMode = 'latest'): 
     query = query.order('created_at', { ascending: false });
   }
 
-  const { data, error } = await query;
+  const { data, error } = await query.limit(30);
   if (error) throw new Error('피드를 불러오는 데 실패했습니다.');
 
   return (data ?? []).map(mapRowToPost);
