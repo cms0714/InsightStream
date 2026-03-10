@@ -1,12 +1,6 @@
-const CACHE_NAME = 'insightstream-v1';
-const PRECACHE_URLS = [
-  '/',
-];
+const CACHE_NAME = 'insightstream-v2';
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -20,25 +14,13 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET and cross-origin requests
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith(self.location.origin)) return;
 
-  // Network-first strategy for HTML pages
-  if (event.request.headers.get('accept')?.includes('text/html')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
+  // HTML pages: network only (no caching overhead)
+  if (event.request.headers.get('accept')?.includes('text/html')) return;
 
-  // Cache-first for static assets
+  // Static assets: cache-first
   if (event.request.url.match(/\.(js|css|png|jpg|jpeg|svg|woff2?)$/)) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
@@ -52,7 +34,4 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
-  // Network-first for API/data requests
-  event.respondWith(fetch(event.request));
 });
