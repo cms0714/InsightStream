@@ -375,6 +375,19 @@ export default function MainFeed({
           )}
         </div>
       )}
+      {!profile && !isSearching && (
+        <div className="mx-4 mt-3 px-4 py-3 rounded-xl border border-accent-green/20 bg-accent-green/5 flex items-center justify-between">
+          <p className="text-sm text-text-muted">
+            로그인하면 인사이트를 공유할 수 있어요
+          </p>
+          <button
+            onClick={() => setShowAuth(true)}
+            className="shrink-0 px-4 py-1.5 rounded-lg bg-accent-green text-black text-xs font-semibold hover:bg-accent-green/80 transition-colors"
+          >
+            시작하기
+          </button>
+        </div>
+      )}
       {profile && !isSearching && <PostForm onSubmit={handleAddPost} />}
       <Feed
         posts={displayPosts}
