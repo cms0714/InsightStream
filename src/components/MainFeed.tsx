@@ -12,6 +12,7 @@ import {
   addComment,
   fetchPostDetail,
   searchPosts,
+  fetchMorePosts,
 } from '@/lib/actions';
 import { useToast } from '@/lib/toast-context';
 import Header from './Header';
@@ -54,6 +55,8 @@ export default function MainFeed({
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
   const [showAuth, setShowAuth] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(initialPosts.length >= 30);
   const [, startTransition] = useTransition();
   const { showToast } = useToast();
 
@@ -86,6 +89,25 @@ export default function MainFeed({
   const handleSearchClear = () => {
     setSearchQuery('');
     setSearchResults(null);
+  };
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    const lastPost = posts[posts.length - 1];
+    if (!lastPost) return;
+
+    setLoadingMore(true);
+    try {
+      const morePosts = await fetchMorePosts(lastPost.createdAt);
+      if (morePosts.length < 30) setHasMore(false);
+      if (morePosts.length > 0) {
+        setPosts((prev) => [...prev, ...morePosts]);
+      }
+    } catch {
+      showToast('더 불러오기에 실패했습니다.', 'error');
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const handleAddPost = async (data: {
@@ -417,6 +439,9 @@ export default function MainFeed({
         onBookmarkToggle={handleBookmarkToggle}
         onPostClick={handlePostClick}
         userReactions={userReactions}
+        onLoadMore={!isSearching ? handleLoadMore : undefined}
+        loadingMore={loadingMore}
+        hasMore={hasMore}
       />
       {selectedPostId && (
         <PostDetail

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useCallback } from 'react';
 import { Post, Reaction } from '@/lib/types';
 import { categoryLabels } from '@/lib/categories';
 import { CategoryItem } from '@/lib/categories';
@@ -14,6 +15,9 @@ interface FeedProps {
   onBookmarkToggle: (postId: string) => void;
   onPostClick: (postId: string) => void;
   userReactions: Record<string, string[]>;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
 }
 
 const emptyMessages: Record<string, { title: string; sub: string }> = {
@@ -21,7 +25,26 @@ const emptyMessages: Record<string, { title: string; sub: string }> = {
   saved: { title: '저장한 글이 없어요', sub: '카드의 북마크 아이콘을 눌러보세요' },
 };
 
-export default function Feed({ posts, bookmarkedIds, activeTab, onReact, onBookmarkToggle, onPostClick, userReactions }: FeedProps) {
+export default function Feed({ posts, bookmarkedIds, activeTab, onReact, onBookmarkToggle, onPostClick, userReactions, onLoadMore, loadingMore, hasMore }: FeedProps) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const handleIntersect = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      if (entries[0].isIntersecting && hasMore && !loadingMore && onLoadMore) {
+        onLoadMore();
+      }
+    },
+    [hasMore, loadingMore, onLoadMore]
+  );
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !onLoadMore) return;
+    const observer = new IntersectionObserver(handleIntersect, { rootMargin: '200px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleIntersect, onLoadMore]);
+
   if (posts.length === 0) {
     const msg = emptyMessages[activeTab] || {
       title: `${categoryLabels[activeTab as Category] || activeTab} 카테고리가 비어있어요`,
@@ -48,6 +71,16 @@ export default function Feed({ posts, bookmarkedIds, activeTab, onReact, onBookm
           userReactions={userReactions[post.id] || []}
         />
       ))}
+      {onLoadMore && (
+        <div ref={sentinelRef} className="col-span-full flex justify-center py-6">
+          {loadingMore && (
+            <div className="w-6 h-6 border-2 border-accent-green border-t-transparent rounded-full animate-spin" />
+          )}
+          {!hasMore && posts.length > 0 && (
+            <p className="text-xs text-text-muted">모든 글을 불러왔습니다</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

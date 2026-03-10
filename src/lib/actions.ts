@@ -200,6 +200,30 @@ export async function fetchPosts(category?: string, sort: SortMode = 'latest'): 
   return (data ?? []).map(mapRowToPost);
 }
 
+export async function fetchMorePosts(cursor: string, category?: string, sort: SortMode = 'latest'): Promise<Post[]> {
+  const supabase = await createSupabaseServer();
+  let query = supabase.from('posts_feed').select('*');
+
+  if (category && category !== 'all') {
+    query = query.contains('categories', [category]);
+  }
+
+  if (sort === 'popular') {
+    query = query.order('oh_count', { ascending: false })
+      .order('amazing_count', { ascending: false })
+      .order('useful_count', { ascending: false })
+      .lt('created_at', cursor);
+  } else {
+    query = query.order('created_at', { ascending: false })
+      .lt('created_at', cursor);
+  }
+
+  const { data, error } = await query.limit(30);
+  if (error) throw new Error('피드를 불러오는 데 실패했습니다.');
+
+  return (data ?? []).map(mapRowToPost);
+}
+
 export async function searchPosts(query: string): Promise<Post[]> {
   const supabase = await createSupabaseServer();
   const searchTerm = `%${query.trim()}%`;
