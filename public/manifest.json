@@ -1,7 +1,7 @@
 {
   "name": "InsightStream_",
   "short_name": "InsightStream",
-  "description": "공유는 가볍게, 인사이트는 묵직하게. 학술 피드 커뮤니티.",
+  "description": "공유는 가볍게, 인사이트는 쏙쏙. 학술 피드 커뮤니티.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

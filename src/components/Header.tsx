@@ -28,7 +28,7 @@ export default function Header({ profile, onProfileEdit, onSearch, onSearchClear
             <span className="text-accent-green animate-pulse">_</span>
           </h1>
           <p className="text-xs text-text-muted mt-1">
-            공유는 가볍게, 인사이트는 묵직하게
+            공유는 가볍게, 인사이트는 쏙쏙
           </p>
         </div>
         <div className="flex items-center gap-1">

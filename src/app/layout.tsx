@@ -17,7 +17,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "InsightStream_",
-  description: "공유는 가볍게, 인사이트는 묵직하게. 학술 피드 커뮤니티.",
+  description: "공유는 가볍게, 인사이트는 쏙쏙. 학술 피드 커뮤니티.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "InsightStream_",
-    description: "공유는 가볍게, 인사이트는 묵직하게. 학술 피드 커뮤니티.",
+    description: "공유는 가볍게, 인사이트는 쏙쏙. 학술 피드 커뮤니티.",
     type: "website",
   },
 };
